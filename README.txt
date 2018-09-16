@@ -38,5 +38,6 @@ cd ..
 
 Credits
 ---
-The SDL2 port is based on exjam's threads and timers libraries
-and inspired on sdl-libtransistor
+- exjam: threads and timers libraries, wut toolchain and various help
+- aliaspider: texture shader
+- based on libnx/libtransistor SDL2 ports
