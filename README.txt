@@ -7,37 +7,21 @@ Prerequisites
 The following tools must be installed:
 - devkitPPC
 - WUT
-- portlibs (the wiiu version, available at dimok789's homebrew_launcher release page)
+- portlibs
+  (wiiu version with stripped debug sections, in this project release page)
 
 The following path variables must be exported:
 - $WUT_ROOT
 - $DEVKITPRO
-- $DEVKITPPC
-
 
 Install
 ---
 Run the following, from this repo's root directory:
 
-cd SDL2-wiiu
-make -f Makefile.wiiu install
-cd ..
-
-cd SDL2_image-2.0.3-wiiu
-make -f Makefile.wiiu install
-cd ..
-
-cd SDL2_gfx-1.0.4-wiiu
-make -f Makefile.wiiu install
-cd ..
-
-cd SDL2_ttf-2.0.14-wiiu
-make -f Makefile.wiiu install
-cd ..
-
+./install.sh
 
 Credits
 ---
-- exjam: threads and timers libraries, wut toolchain and various help
+- rw-r-r-0644, quarktheawesome, exjam: wiiu sdl port and libraries
 - aliaspider: texture shader
 - based on libnx/libtransistor SDL2 ports
