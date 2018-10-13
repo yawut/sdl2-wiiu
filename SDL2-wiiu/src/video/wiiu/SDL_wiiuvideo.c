@@ -1,3 +1,25 @@
+/*
+  Simple DirectMedia Layer
+  Copyright (C) 2018-2018 Ash Logan <ash@heyquark.com>
+  Copyright (C) 2018-2018 rw-r-r-0644 <r.r.qwertyuiop.r.r@gmail.com>
+
+  This software is provided 'as-is', without any express or implied
+  warranty.  In no event will the authors be held liable for any damages
+  arising from the use of this software.
+
+  Permission is granted to anyone to use this software for any purpose,
+  including commercial applications, and to alter it and redistribute it
+  freely, subject to the following restrictions:
+
+  1. The origin of this software must not be misrepresented; you must not
+     claim that you wrote the original software. If you use this software
+     in a product, an acknowledgment in the product documentation would be
+     appreciated but is not required.
+  2. Altered source versions must be plainly marked as such, and must not be
+     misrepresented as being the original software.
+  3. This notice may not be removed or altered from any source distribution.
+*/
+
 #include "../../SDL_internal.h"
 
 #if SDL_VIDEO_DRIVER_WIIU
@@ -22,12 +44,29 @@
 #include <whb/gfx.h>
 #include <coreinit/memdefaultheap.h>
 #include <string.h>
+#include <stdint.h>
 
 #include "texture_shader.h"
+
+static int WIIU_VideoInit(_THIS);
+static int WIIU_SetDisplayMode(_THIS, SDL_VideoDisplay *display, SDL_DisplayMode *mode);
+static void WIIU_VideoQuit(_THIS);
+static void WIIU_PumpEvents(_THIS);
+static int WIIU_CreateWindowFramebuffer(_THIS, SDL_Window *window, Uint32 *format, void **pixels, int *pitch);
+static int WIIU_UpdateWindowFramebuffer(_THIS, SDL_Window *window, const SDL_Rect *rects, int numrects);
+static void WIIU_DestroyWindowFramebuffer(_THIS, SDL_Window *window);
 
 #define WIIU_DATA "_SDL_WiiUData"
 #define SCREEN_WIDTH    1280
 #define SCREEN_HEIGHT   720
+
+static const float tex_coord_vb[] =
+{
+	0.0f, 1.0f,
+	1.0f, 1.0f,
+	1.0f, 0.0f,
+	0.0f, 0.0f,
+};
 
 typedef struct
 {
@@ -35,92 +74,23 @@ typedef struct
 	GX2Texture texture;
 } WIIU_WindowData;
 
-static int WIIU_VideoInit(_THIS);
-
-static int WIIU_SetDisplayMode(_THIS, SDL_VideoDisplay *display, SDL_DisplayMode *mode);
-
-static void WIIU_VideoQuit(_THIS);
-
-static void WIIU_PumpEvents(_THIS);
-
-static int WIIU_CreateWindowFramebuffer(_THIS, SDL_Window *window, Uint32 *format, void **pixels, int *pitch);
-
-static int WIIU_UpdateWindowFramebuffer(_THIS, SDL_Window *window, const SDL_Rect *rects, int numrects);
-
-static void WIIU_DestroyWindowFramebuffer(_THIS, SDL_Window *window);
-
-
-static const float position_vb[] =
-{
-   -1.0f, -1.0f,
-    1.0f, -1.0f,
-    1.0f,  1.0f,
-   -1.0f,  1.0f,
+static GX2RBuffer tex_coord_buffer = {
+	GX2R_RESOURCE_BIND_VERTEX_BUFFER |
+	GX2R_RESOURCE_USAGE_CPU_READ |
+	GX2R_RESOURCE_USAGE_CPU_WRITE |
+	GX2R_RESOURCE_USAGE_GPU_READ,
+	2 * sizeof(float), 4, NULL
 };
 static GX2RBuffer position_buffer = {
 	GX2R_RESOURCE_BIND_VERTEX_BUFFER |
 	GX2R_RESOURCE_USAGE_CPU_READ |
 	GX2R_RESOURCE_USAGE_CPU_WRITE |
 	GX2R_RESOURCE_USAGE_GPU_READ,
-	2 * 4, 4, NULL
-};
-
-static const float tex_coord_vb[] =
-{
-   0.0f, 1.0f,
-   1.0f, 1.0f,
-   1.0f, 0.0f,
-   0.0f, 0.0f,
-};
-static GX2RBuffer tex_coord_buffer = {
-	GX2R_RESOURCE_BIND_VERTEX_BUFFER |
-	GX2R_RESOURCE_USAGE_CPU_READ |
-	GX2R_RESOURCE_USAGE_CPU_WRITE |
-	GX2R_RESOURCE_USAGE_GPU_READ,
-	2 * 4, 4, NULL
+	2 * sizeof(float), 4, NULL
 };
 
 static WHBGfxShaderGroup group = { 0 };
 static GX2Sampler sampler = {0};
-
-
-static int WIIU_Available(void)
-{
-	return 1;
-}
-
-static void WIIU_DeleteDevice(SDL_VideoDevice *device)
-{
-	SDL_free(device);
-}
-
-static SDL_VideoDevice *WIIU_CreateDevice(int devindex)
-{
-	SDL_VideoDevice *device;
-
-	device = (SDL_VideoDevice*) SDL_calloc(1, sizeof(SDL_VideoDevice));
-	if(!device) {
-		SDL_OutOfMemory();
-		return NULL;
-	}
-
-	device->VideoInit = WIIU_VideoInit;
-	device->VideoQuit = WIIU_VideoQuit;
-	device->SetDisplayMode = WIIU_SetDisplayMode;
-	device->PumpEvents = WIIU_PumpEvents;
-	device->CreateWindowFramebuffer = WIIU_CreateWindowFramebuffer;
-	device->UpdateWindowFramebuffer = WIIU_UpdateWindowFramebuffer;
-	device->DestroyWindowFramebuffer = WIIU_DestroyWindowFramebuffer;
-
-	device->free = WIIU_DeleteDevice;
-
-	return device;
-}
-
-VideoBootStrap WIIU_bootstrap = {
-	"WiiU", "Video driver for Nintendo WiiU",
-	WIIU_Available, WIIU_CreateDevice
-};
 
 static int WIIU_VideoInit(_THIS)
 {
@@ -138,14 +108,13 @@ static int WIIU_VideoInit(_THIS)
 
 	// setup vertex position attribute
 	GX2RCreateBuffer(&position_buffer);
-	buffer = GX2RLockBufferEx(&position_buffer, 0);
-	memcpy(buffer, position_vb, position_buffer.elemSize * position_buffer.elemCount);
-	GX2RUnlockBufferEx(&position_buffer, 0);
 
 	// setup vertex texture coordinates attribute
 	GX2RCreateBuffer(&tex_coord_buffer);
 	buffer = GX2RLockBufferEx(&tex_coord_buffer, 0);
-	memcpy(buffer, tex_coord_vb, tex_coord_buffer.elemSize * tex_coord_buffer.elemCount);
+	if (buffer) {
+		memcpy(buffer, tex_coord_vb, tex_coord_buffer.elemSize * tex_coord_buffer.elemCount);
+	}
 	GX2RUnlockBufferEx(&tex_coord_buffer, 0);
 
 	// initialize a sampler
@@ -171,15 +140,6 @@ static void WIIU_VideoQuit(_THIS)
 	GX2RDestroyBufferEx(&tex_coord_buffer, 0);
 	WHBGfxShutdown();
 	WHBProcShutdown();
-}
-
-static int WIIU_SetDisplayMode(_THIS, SDL_VideoDisplay *display, SDL_DisplayMode *mode)
-{
-	return 0;
-}
-
-static void WIIU_PumpEvents(_THIS)
-{
 }
 
 static int WIIU_CreateWindowFramebuffer(_THIS, SDL_Window *window, Uint32 *format, void **pixels, int *pitch)
@@ -225,40 +185,69 @@ static int WIIU_CreateWindowFramebuffer(_THIS, SDL_Window *window, Uint32 *forma
 	return 0;
 }
 
+static void render_scene(WIIU_WindowData *data) {
+	WHBGfxClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+	GX2SetFetchShader(&group.fetchShader);
+	GX2SetVertexShader(group.vertexShader);
+	GX2SetPixelShader(group.pixelShader);
+	GX2RSetAttributeBuffer(&position_buffer, 0, position_buffer.elemSize, 0);
+	GX2RSetAttributeBuffer(&tex_coord_buffer, 1, tex_coord_buffer.elemSize, 0);
+
+	GX2SetPixelTexture(&data->texture, group.pixelShader->samplerVars[0].location);
+	GX2SetPixelSampler(&sampler, group.pixelShader->samplerVars[0].location);
+
+	GX2DrawEx(GX2_PRIMITIVE_MODE_QUADS, 4, 0, 1);
+}
+
 static int WIIU_UpdateWindowFramebuffer(_THIS, SDL_Window *window, const SDL_Rect *rects, int numrects)
 {
 	WIIU_WindowData *data = (WIIU_WindowData *) SDL_GetWindowData(window, WIIU_DATA);
+	float* buffer;
+	int int_x, int_y, int_w, int_h;
+	float x, y, w, h;
+
+	SDL_GetWindowPosition(window, &int_x, &int_y);
+	SDL_GetWindowSize(window, &int_w, &int_h);
+
+	//TODO: move math to a shader
+	x = (float)int_x;
+	y = (float)int_y;
+	w = (float)int_w;
+	h = (float)int_h;
+
+	//x and y need to be between -1.0f and 1.0f
+	x /= (SCREEN_WIDTH / 2);
+	x -= 1.0f;
+	y /= (SCREEN_HEIGHT / 2);
+	y -= 1.0f;
+
+	//w and h need to be between 0.0f and 2.0f
+	w /= (SCREEN_WIDTH / 2);
+	h /= (SCREEN_HEIGHT / 2);
+
+	float position_vb[] =
+	{
+		x, y,
+		x + w, y,
+		x + w, y + h,
+		x, y + h,
+	};
+	buffer = GX2RLockBufferEx(&position_buffer, 0);
+	if (buffer) {
+		memcpy(buffer, position_vb, position_buffer.elemSize * position_buffer.elemCount);
+	}
+	GX2RUnlockBufferEx(&position_buffer, 0);
 
 	GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, data->texture.surface.image, data->texture.surface.imageSize);
 
 	WHBGfxBeginRender();
 
 	WHBGfxBeginRenderTV();
-	WHBGfxClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-	GX2SetFetchShader(&group.fetchShader);
-	GX2SetVertexShader(group.vertexShader);
-	GX2SetPixelShader(group.pixelShader);
-	GX2RSetAttributeBuffer(&position_buffer, 0, position_buffer.elemSize, 0);
-	GX2RSetAttributeBuffer(&tex_coord_buffer, 1, tex_coord_buffer.elemSize, 0);
-
-	GX2SetPixelTexture(&data->texture, group.pixelShader->samplerVars[0].location);
-	GX2SetPixelSampler(&sampler, group.pixelShader->samplerVars[0].location);
-
-	GX2DrawEx(GX2_PRIMITIVE_MODE_QUADS, 4, 0, 1);
+	render_scene(data);
 	WHBGfxFinishRenderTV();
 
 	WHBGfxBeginRenderDRC();
-	WHBGfxClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-	GX2SetFetchShader(&group.fetchShader);
-	GX2SetVertexShader(group.vertexShader);
-	GX2SetPixelShader(group.pixelShader);
-	GX2RSetAttributeBuffer(&position_buffer, 0, position_buffer.elemSize, 0);
-	GX2RSetAttributeBuffer(&tex_coord_buffer, 1, tex_coord_buffer.elemSize, 0);
-
-	GX2SetPixelTexture(&data->texture, group.pixelShader->samplerVars[0].location);
-	GX2SetPixelSampler(&sampler, group.pixelShader->samplerVars[0].location);
-
-	GX2DrawEx(GX2_PRIMITIVE_MODE_QUADS, 4, 0, 1);
+	render_scene(data);
 	WHBGfxFinishRenderDRC();
 
 	WHBGfxFinishRender();
@@ -273,5 +262,52 @@ static void WIIU_DestroyWindowFramebuffer(_THIS, SDL_Window *window)
 	MEMFreeToDefaultHeap(data->texture.surface.image);
 	SDL_free(data);
 }
+
+static int WIIU_SetDisplayMode(_THIS, SDL_VideoDisplay *display, SDL_DisplayMode *mode)
+{
+	return 0;
+}
+
+static void WIIU_PumpEvents(_THIS)
+{
+}
+
+static int WIIU_Available(void)
+{
+	return 1;
+}
+
+static void WIIU_DeleteDevice(SDL_VideoDevice *device)
+{
+	SDL_free(device);
+}
+
+static SDL_VideoDevice *WIIU_CreateDevice(int devindex)
+{
+	SDL_VideoDevice *device;
+
+	device = (SDL_VideoDevice*) SDL_calloc(1, sizeof(SDL_VideoDevice));
+	if(!device) {
+		SDL_OutOfMemory();
+		return NULL;
+	}
+
+	device->VideoInit = WIIU_VideoInit;
+	device->VideoQuit = WIIU_VideoQuit;
+	device->SetDisplayMode = WIIU_SetDisplayMode;
+	device->PumpEvents = WIIU_PumpEvents;
+	device->CreateWindowFramebuffer = WIIU_CreateWindowFramebuffer;
+	device->UpdateWindowFramebuffer = WIIU_UpdateWindowFramebuffer;
+	device->DestroyWindowFramebuffer = WIIU_DestroyWindowFramebuffer;
+
+	device->free = WIIU_DeleteDevice;
+
+	return device;
+}
+
+VideoBootStrap WIIU_bootstrap = {
+	"WiiU", "Video driver for Nintendo WiiU",
+	WIIU_Available, WIIU_CreateDevice
+};
 
 #endif /* SDL_VIDEO_DRIVER_WIIU */
