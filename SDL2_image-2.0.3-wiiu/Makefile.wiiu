@@ -25,7 +25,7 @@ SOURCES = \
 	IMG_xxx.c
 
 OBJECTS = $(shell echo $(SOURCES) | sed -e 's,\.c,\.o,g')
-INCLUDE = -I$(WUT_ROOT)/include -I$(PORTLIBS)/include -I$(PORTLIBS)/include/SDL2
+INCLUDE = -I$(WUT_ROOT)/include -I$(PORTLIBS)/include -I$(BASEDIR)/../SDL2-wiiu/include
 
 #---------------------------------------------------------------------------------
 # Compile flags

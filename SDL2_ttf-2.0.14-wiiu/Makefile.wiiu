@@ -9,7 +9,7 @@ SOURCES = \
 	SDL_ttf.c
 
 OBJECTS = $(shell echo $(SOURCES) | sed -e 's,\.c,\.o,g')
-INCLUDE = -I$(WUT_ROOT)/include -I$(PORTLIBS)/include -I$(PORTLIBS)/include/SDL2 -I$(PORTLIBS)/include/freetype2
+INCLUDE = -I$(WUT_ROOT)/include -I$(PORTLIBS)/include -I$(BASEDIR)/../SDL2-wiiu/include -I$(PORTLIBS)/include/freetype2
 
 #---------------------------------------------------------------------------------
 # Compile flags

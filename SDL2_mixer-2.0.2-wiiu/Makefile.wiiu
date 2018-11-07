@@ -8,7 +8,7 @@ TARGET  = libSDL2_mixer.a
 SOURCES = $(wildcard ./*.c)
 
 OBJECTS = $(SOURCES:.c=.o)
-INCLUDE = -I$(WUT_ROOT)/include -I$(PORTLIBS)/include -I$(PORTLIBS)/include/SDL2
+INCLUDE = -I$(WUT_ROOT)/include -I$(PORTLIBS)/include -I$(BASEDIR)/../SDL2-wiiu/include
 
 #---------------------------------------------------------------------------------
 # Compile flags
